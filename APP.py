@@ -75,11 +75,12 @@ if uploaded_file is not None:
             # 自动识别关键列
             time_col = next((col for col in df.columns if "时间" in col), None)
             name_col = next((col for col in df.columns if "商品名" in col), None)
-            pharmacy_col = next((col for col in df.columns if "药房" in col), None)
+           pharmacy_col = next((col for col in df.columns if "药房" in col), None)
+            code_col = next((col for col in df.columns if "编码" in col), None) # 👈 新增这一行
             id_col = next((col for col in df.columns if "id" in col.lower() or "患者" in col), None)
             spec_col = next((col for col in df.columns if "规格" in col), None)
             
-            if not all([time_col, name_col, pharmacy_col, id_col, spec_col]):
+            if not all([time_col, name_col, pharmacy_col, code_col, id_col, spec_col]): # 👈 这里加上了 code_col
                 st.error("❌ 错误：底表中缺少必要列！请确保包含：销售时间、商品名、药房、患者id、规格。")
             else:
                 st.success("📊 成功读取数据，正在进行药房名称映射及随访计算...")
