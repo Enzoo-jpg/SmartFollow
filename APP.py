@@ -54,7 +54,7 @@ month_options = [dt.strftime("%Y年%m月") for dt in month_range]
 selected_month_display = st.selectbox(
     "1. 请选择需要随访的月份：", 
     options=month_options, 
-    index=month_options.index("2026ohn05月") if "2026年05月" in month_options else 0
+    index=month_options.index("2026年05月") if "2026年05月" in month_options else 0
 )
 target_month_str = pd.to_datetime(selected_month_display, format="%Y年%m月").strftime("%Y-%m")
 
