@@ -165,6 +165,7 @@ if uploaded_file is not None:
                     st.markdown("### 📄 随访名单预览 (前100条)")
                     st.dataframe(result_df.head(100), use_container_width=True)
                     
+                   # 导出为 Excel 内存流
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         result_df.to_excel(writer, index=False, sheet_name='随访名单')
@@ -176,5 +177,5 @@ if uploaded_file is not None:
                         file_name=f"{target_month_str}月份自动随访名单.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
-except Exception as e:
-    st.error(f"💥 程序运行出错。错误原因: {e}")
+    except Exception as e:
+        st.error(f"💥 程序运行出错。错误原因: {e}")
