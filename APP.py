@@ -22,9 +22,21 @@ st.markdown("""
 
 st.divider()
 
-# 1. 用户选择随访月份
-target_month = st.date_input("1. 选择需要随访的月份：", value=pd.to_datetime("2026-05-01"), min_value=pd.to_datetime("2025-10-01"))
-target_month_str = target_month.strftime("%Y-%m")
+# 1. 自动生成从2025年10月到2028年12月的月份列表（可以根据需要自行调整结束年份）
+month_range = pd.date_range(start="2025-10-01", end="2028-12-01", freq="MS")
+
+# 将月份转换为更亲切的中文显示格式，例如 "2026年05月"
+month_options = [dt.strftime("%Y年%m月") for dt in month_range]
+
+# 在网页上显示一个干净的下拉选择框，默认停留在 2026年05月
+selected_month_display = st.selectbox(
+    "1. 请选择需要随访的月份：", 
+    options=month_options, 
+    index=month_options.index("2026年05月") if "2026年05月" in month_options else 0
+)
+
+# 后台逻辑依然自动转换为标准格式 "2026-05" 拿去和底表做精确计算
+target_month_str = pd.to_datetime(selected_month_display, format="%Y年%m月").strftime("%Y-%m")
 
 # 2. 用户上传文件
 uploaded_file = st.file_uploader("2. 上传历史销售底表 (.xlsx)", type=["xlsx"])
