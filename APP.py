@@ -95,8 +95,19 @@ if uploaded_file is not None:
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df = df.dropna(subset=[time_col])
                 
+               # 确保门店编码被当做文本处理，防止长编码变形或丢失前导0
+                df[code_col] = df[code_col].astype(str).str.strip() # 👈 新增这一行
+                
                 df['购买月份'] = df[time_col].dt.strftime('%Y-%m')
-                df['患者唯一KEY'] = df[name_col].astype(str) + "_" + df[pharmacy_col].astype(str) + "_" + df[id_col].astype(str) + "_" + df[spec_col].astype(str)
+                
+                # 👈 替换为下面这个 5 字段拼接
+                df['患者唯一KEY'] = (
+                    df[name_col].astype(str) + "_" + 
+                    df[pharmacy_col].astype(str) + "_" + 
+                    df[code_col].astype(str) + "_" + 
+                    df[id_col].astype(str) + "_" + 
+                    df[spec_col].astype(str)
+                )
                 
                 # 计算每个患者的绝对首次购买月份
                 first_buy = df.groupby('患者唯一KEY')['购买月份'].min().reset_index()
@@ -108,7 +119,7 @@ if uploaded_file is not None:
                 if followup_patients.empty:
                     st.info(f"✨ 计算完成：{selected_month_display} 没有任何需要随访的老患者。")
                 else:
-                    split_cols = followup_patients['患者唯一KEY'].str.split('_', expand=True)
+                   split_cols = followup_patients['患者唯一KEY'].str.split('_', expand=True)
                     result_df = pd.DataFrame({
                         '患者唯一KEY': followup_patients['患者唯一KEY'],
                         '商品名': split_cols[0],
