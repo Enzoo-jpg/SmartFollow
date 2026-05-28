@@ -67,7 +67,7 @@ CODE_MAPPING = {
 st.markdown("""
 ### 💡 使用前须知：
 1. **历史销售底表**：上传的 Excel 中必须包含一个名为 **`销售底表`** 的工作表，且表头须含：*销售时间、商品名、药房、门店编码、患者id、规格*。
-2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并**智能按次数差额扣减**，精准提取出**“漏访待补名单”**。
+2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并**智能直接扣减**，精准提取出**“漏访待补名单”**。
 3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
 4. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
 """, unsafe_allow_html=True)
@@ -91,7 +91,6 @@ with st.expander("👉 如果忘记表头或怕格式有误，请点此展开下
         df_hist_tpl.to_excel(writer, index=False, sheet_name='已完成随访记录')
     hist_tpl_bytes = hist_out.getvalue()
 
-    # 优化点：缩短 label 长度，严防复制截断错误
     st.download_button(
         label="📥 下载《1. 销售底表模板》",
         data=base_tpl_bytes,
@@ -122,7 +121,7 @@ target_month_str = pd.to_datetime(selected_month_display, format="%Y年%m月").s
 uploaded_file = st.file_uploader("2. 上传历史销售底表 (.xlsx)", type=["xlsx"])
 
 # 3. 用户可选上传已随访表格
-uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随访记录表 (.xlsx) —— 用于多规格差额补访比对", type=["xlsx"])
+uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随访记录表 (.xlsx) —— 用于差额补访比对", type=["xlsx"])
 
 if uploaded_file is not None:
     try:
@@ -152,7 +151,6 @@ if uploaded_file is not None:
                 has_history = False
                 hist_warning_flag = False
                 
-                # 把繁重的计算过程包裹在 spinner 中
                 with st.spinner("📊 正在读取数据并进行智能随访计算..."):
                     # 自动做药房名字映射
                     df[pharmacy_col] = df[pharmacy_col].astype(str).str.strip().replace(PHARMACY_MAPPING)
@@ -196,31 +194,32 @@ if uploaded_file is not None:
                                 
                                 req_hist_cols = ['患者oneId', '药品名称', '门店', '门店编码']
                                 if all(col in df_history.columns for col in req_hist_cols):
+                                    # 🔥【核心修复点1】：让历史随访表也执行一模一样的更名和编码映射，统一两边的格式
+                                    df_history['门店'] = df_history['门店'].astype(str).str.strip().replace(PHARMACY_MAPPING)
+                                    df_history['门店编码'] = df_history['门店编码'].astype(str).str.strip().replace(CODE_MAPPING)
+                                    
                                     df_history['干净药品名'] = df_history['药品名称'].astype(str).str.split('-').str[0].str.strip()
                                     df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip()
-                                    df_history['门店'] = df_history['门店'].astype(str).str.strip()
-                                    df_history['门店编码'] = df_history['门店编码'].astype(str).str.strip()
                                     
+                                    # 生成历史表的 4 维唯一 KEY
                                     df_history['4D_KEY'] = (
                                         df_history['干净药品名'] + "_" + 
                                         df_history['门店'] + "_" + 
                                         df_history['门店编码'] + "_" + 
                                         df_history['患者oneId']
                                     )
-                                    df_history['seq'] = df_history.groupby('4D_KEY').cumcount().astype(str)
-                                    df_history['match_KEY'] = df_history['4D_KEY'] + "_" + df_history['seq']
                                     
+                                    # 生成当前计算表的 4 维唯一 KEY
                                     result_df['4D_KEY'] = (
                                         result_df['商品名'].astype(str).str.strip() + "_" + 
                                         result_df['药房'].astype(str).str.strip() + "_" + 
                                         result_df['门店编码'].astype(str).str.strip() + "_" + 
                                         result_df['患者id'].astype(str).str.strip()
                                     )
-                                    result_df['seq'] = result_df.groupby('4D_KEY').cumcount().astype(str)
-                                    result_df['match_KEY'] = result_df['4D_KEY'] + "_" + result_df['seq']
                                     
-                                    result_df = result_df[~result_df['match_KEY'].isin(df_history['match_KEY'])]
-                                    result_df = result_df.drop(columns=['4D_KEY', 'seq', 'match_KEY'])
+                                    # 🔥【核心修复点2】：抛弃复杂的 seq 排队，只要历史表里存在这个 4维KEY，说明已做随访，直接彻底过滤
+                                    result_df = result_df[~result_df['4D_KEY'].isin(df_history['4D_KEY'])]
+                                    result_df = result_df.drop(columns=['4D_KEY'])
                                     has_history = True
                                 else:
                                     hist_warning_flag = True
