@@ -26,7 +26,7 @@ PHARMACY_MAPPING = {
     "DTC国药控股四川医药股份有限公司南充药房": "国药控股四川医药股份有限公司南充药房",
     "DTC国药控股内江有限公司第一大药房": "国药控股内江有限公司第一大药房",
     "DTC国药控股四川专业药房连锁有限公司雅安药房": "国药控股四川专业药房连锁有限公司雅安药房",
-    "国药控股内江有限公司第二大药房": "国药控股内江有限公司 second大药房",
+    "国药控股内江有限公司第二大药房": "国药控股内江有限公司第二大药房",
     "四川环晟大药房有限公司蜀南大道店": "四川环晟大药房有限公司蜀南大道店",
     "国药控股(乐山)川药医药有限公司滨河路店": "国药控股（乐山）川药医药有限公司乐山高新区店",
     "国药控股昊阳绵阳药业有限公司江油匡山路大药房": "国药控股昊阳绵阳药业有限公司江油匡山路大药房",
@@ -69,10 +69,9 @@ CODE_MAPPING = {
 
 st.markdown("""
 ### 💡 使用前须知：
-1. 上传的 Excel 中必须包含一个名为 **`销售底表`** 的工作表。
-2. 该工作表表头必须包含这六列：**`销售时间`**、**`商品名`**、**`药房`**、**`门店编码`**、**`患者id`**、**`规格`**。
-3. **（可选）上传已有随访记录**：若上传，系统会自动比对并**剔除已完成随访的人员**，精准提取**“漏访待补名单”**。
-4. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
+1. **历史销售底表**：上传的 Excel 中必须包含一个名为 **`销售底表`** 的工作表，且表头须含：*销售时间、商品名、药房、门店编码、患者id、规格*。
+2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并**智能按次数差额扣减**，精准提取出**“漏访待补名单”**。
+3. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -92,7 +91,7 @@ target_month_str = pd.to_datetime(selected_month_display, format="%Y年%m月").s
 uploaded_file = st.file_uploader("2. 上传历史销售底表 (.xlsx)", type=["xlsx"])
 
 # 3. 用户可选上传已随访表格
-uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随访记录表 (.xlsx) —— 用于比对漏报漏访", type=["xlsx"])
+uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随访记录表 (.xlsx) —— 用于多规格差额补访比对", type=["xlsx"])
 
 if uploaded_file is not None:
     try:
@@ -148,28 +147,8 @@ if uploaded_file is not None:
                 # 核心业务逻辑筛选（原本所有应该随访的人）
                 followup_patients = first_buy[first_buy['首次购买月份'] < target_month_str]
                 
-                # 比对已有随访记录，实现精准差额去重
-                has_history = False
-                if uploaded_history is not None:
-                    try:
-                        df_history = pd.read_excel(uploaded_history)
-                        df_history.columns = df_history.columns.str.strip()
-                        
-                        # 寻找已有随访表里的“唯一KEY”列
-                        history_key_col = next((col for col in df_history.columns if "KEY" in col or "唯一" in col), None)
-                        
-                        if history_key_col:
-                            df_history[history_key_col] = df_history[history_key_col].astype(str).str.strip()
-                            # 核心去重：原本应该随访的人中，剔除掉那些唯一KEY已经存在于历史记录里的人
-                            followup_patients = followup_patients[~followup_patients['患者唯一KEY'].isin(df_history[history_key_col])]
-                            has_history = True
-                        else:
-                            st.warning("⚠️ 提示：上传的已有随访记录表中未找到“患者唯一KEY”列，无法自动比对去重，已输出全量名单。")
-                    except Exception as hist_e:
-                        st.warning(f"⚠️ 提示：比对已有随访记录失败（原因: {hist_e}），已忽略比对并输出全量名单。")
-                
                 if followup_patients.empty:
-                    st.info(f"✨ 计算完成：{selected_month_display} 没有任何需要随访（或需要补随访）的老患者。")
+                    st.info(f"✨ 计算完成：{selected_month_display} 没有任何需要随访的老患者。")
                 else:
                     split_cols = followup_patients['患者唯一KEY'].str.split('_', expand=True)
                     
@@ -183,25 +162,76 @@ if uploaded_file is not None:
                         '规格': split_cols[4]      
                     })
                     
-                    st.divider()
-                    # 根据是否比对历史，展现差异化的仪表盘标题
-                    metric_label = f"🚨 {selected_month_display} 需【补随访】老患者差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
-                    st.metric(label=metric_label, value=f"{len(result_df)} 人")
+                    # 🛠️ 智能核心：比对已完成随访表，执行次数差额扣减
+                    has_history = False
+                    if uploaded_history is not None:
+                        try:
+                            df_history = pd.read_excel(uploaded_history)
+                            df_history.columns = df_history.columns.str.strip()
+                            
+                            req_hist_cols = ['患者oneId', '药品名称', '门店', '门店编码']
+                            if all(col in df_history.columns for col in req_hist_cols):
+                                # 1. 洗净随访表数据，将 "特诺雅-(古塞奇尤单抗...)" 裁剪为 "特诺雅"
+                                df_history['干净药品名'] = df_history['药品名称'].astype(str).str.split('-').str[0].str.strip()
+                                df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip()
+                                df_history['门店'] = df_history['门店'].astype(str).str.strip()
+                                df_history['门店编码'] = df_history['门店编码'].astype(str).str.strip()
+                                
+                                # 2. 构建已完成表的 4维组合KEY
+                                df_history['4D_KEY'] = (
+                                    df_history['干净药品名'] + "_" + 
+                                    df_history['门店'] + "_" + 
+                                    df_history['门店编码'] + "_" + 
+                                    df_history['患者oneId']
+                                )
+                                # 3. 对相同的4维组合进行随访次数排队打标 (seq: 0, 1, 2...)
+                                df_history['seq'] = df_history.groupby('4D_KEY').cumcount().astype(str)
+                                df_history['match_KEY'] = df_history['4D_KEY'] + "_" + df_history['seq']
+                                
+                                # 4. 对系统计算的应随访表也进行同样的 4维组合 + 次数排队打标
+                                result_df['4D_KEY'] = (
+                                    result_df['商品名'].astype(str).str.strip() + "_" + 
+                                    result_df['药房'].astype(str).str.strip() + "_" + 
+                                    result_df['门店编码'].astype(str).str.strip() + "_" + 
+                                    result_df['患者id'].astype(str).str.strip()
+                                )
+                                result_df['seq'] = result_df.groupby('4D_KEY').cumcount().astype(str)
+                                result_df['match_KEY'] = result_df['4D_KEY'] + "_" + result_df['seq']
+                                
+                                # 5. 核心差额扣减：排除掉 match_KEY 已经存在于已完成随访表里的记录
+                                result_df = result_df[~result_df['match_KEY'].isin(df_history['match_KEY'])]
+                                
+                                # 6. 移除临时辅助列
+                                result_df = result_df.drop(columns=['4D_KEY', 'seq', 'match_KEY'])
+                                has_history = True
+                            else:
+                                st.warning("⚠️ 提示：上传的已随访大表中缺少必要的列（须包含：患者oneId、药品名称、门店、门店编码），已跳过差额比对。")
+                        except Exception as hist_e:
+                            st.warning(f"⚠️ 提示：比对随访历史失败（原因: {hist_e}），已忽略比对并输出全量。")
                     
-                    st.markdown("### 📄 随访名单预览 (前100条)")
-                    st.dataframe(result_df.head(100), use_container_width=True)
-                    
-                    # 导出为 Excel 内存流
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        result_df.to_excel(writer, index=False, sheet_name='随访名单')
-                    processed_data = output.getvalue()
-                    
-                    st.download_button(
-                        label="📥 点击下载完整随访 Excel 表",
-                        data=processed_data,
-                        file_name=f"{target_month_str}月份自动随访名单.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
+                    # 检查扣减后是否还有需要补随访的数据
+                    if result_df.empty:
+                        st.success(f"✨ 智能比对完成：{selected_month_display} 所有老患者的多规格随访任务已全部达成，没有漏访！")
+                    else:
+                        st.divider()
+                        # 根据是否比对历史，展现差异化的仪表盘标题
+                        metric_label = f"🚨 {selected_month_display} 需【补随访】老患者差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
+                        st.metric(label=metric_label, value=f"{len(result_df)} 条任务")
+                        
+                        st.markdown("### 📄 随访名单预览 (前100条)")
+                        st.dataframe(result_df.head(100), use_container_width=True)
+                        
+                        # 导出为 Excel 内存流
+                        output = io.BytesIO()
+                        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                            result_df.to_excel(writer, index=False, sheet_name='随访名单')
+                        processed_data = output.getvalue()
+                        
+                        st.download_button(
+                            label="📥 点击下载完整随访 Excel 表",
+                            data=processed_data,
+                            file_name=f"{target_month_str}月份自动随访名单.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                        )
     except Exception as e:
         st.error(f"💥 程序运行出错。错误原因: {e}")
