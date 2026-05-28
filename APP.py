@@ -71,12 +71,13 @@ st.markdown("""
 ### 💡 使用前须知：
 1. **历史销售底表**：上传的 Excel 中必须包含一个名为 **`销售底表`** 的工作表，且表头须含：*销售时间、商品名、药房、门店编码、患者id、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并**智能按次数差额扣减**，精准提取出**“漏访待补名单”**。
-3. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
+3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
+4. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
 """, unsafe_allow_html=True)
 
 st.divider()
 
-# =================【核心升级：标准模板下载区】=================
+# =================【标准模板下载区】=================
 st.markdown("### 📥 官方标准模板下载")
 with st.expander("👉 如果忘记表头或怕格式有误，请点此展开下载标准模板"):
     # 1. 动态生成【销售底表】模板
@@ -164,37 +165,37 @@ if uploaded_file is not None:
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df = df.dropna(subset=[time_col])
                 
+                # 【核心修改点1】按销售时间升序排列，确保后续去重保留的是患者“第一次”购买的记录
+                df = df.sort_values(by=time_col, ascending=True)
+                
                 df['购买月份'] = df[time_col].dt.strftime('%Y-%m')
                 
-                # 5 字段拼接组合成患者唯一KEY
+                # 【核心修改点2】4 字段拼接组合成患者唯一KEY（移除了规格，规格不再影响唯一性判断）
                 df['患者唯一KEY'] = (
-                    df[name_col].astype(str) + "_" + 
-                    df[pharmacy_col].astype(str) + "_" + 
-                    df[code_col].astype(str) + "_" + 
-                    df[id_col].astype(str) + "_" + 
-                    df[spec_col].astype(str)
+                    df[name_col].astype(str).str.strip() + "_" + 
+                    df[pharmacy_col].astype(str).str.strip() + "_" + 
+                    df[code_col].astype(str).str.strip() + "_" + 
+                    df[id_col].astype(str).str.strip()
                 )
                 
-                # 计算每个患者的绝对首次购买月份
-                first_buy = df.groupby('患者唯一KEY')['购买月份'].min().reset_index()
-                first_buy.columns = ['患者唯一KEY', '首次购买月份']
+                # 【核心修改点3】每个 4维组合只保留最早的那次购买记录，并计算绝对首次购买月份
+                df_first = df.drop_duplicates(subset=['患者唯一KEY'], keep='first').copy()
+                df_first['首次购买月份'] = df_first[time_col].dt.strftime('%Y-%m')
                 
                 # 核心业务逻辑筛选（原本所有应该随访的人）
-                followup_patients = first_buy[first_buy['首次购买月份'] < target_month_str]
+                followup_patients = df_first[df_first['首次购买月份'] < target_month_str]
                 
                 if followup_patients.empty:
                     st.info(f"✨ 计算完成：{selected_month_display} 没有任何需要随访的老患者。")
                 else:
-                    split_cols = followup_patients['患者唯一KEY'].str.split('_', expand=True)
-                    
-                    # 重新生成导出结果结构
+                    # 重新生成导出结果结构（保持原有字段展示，规格展现其历史首次购买的规格）
                     result_df = pd.DataFrame({
                         '患者唯一KEY': followup_patients['患者唯一KEY'],
-                        '商品名': split_cols[0],
-                        '药房': split_cols[1],
-                        '门店编码': split_cols[2],  
-                        '患者id': split_cols[3],    
-                        '规格': split_cols[4]      
+                        '商品名': followup_patients[name_col],
+                        '药房': followup_patients[pharmacy_col],
+                        '门店编码': followup_patients[code_col],  
+                        '患者id': followup_patients[id_col],    
+                        '规格': followup_patients[spec_col]      
                     })
                     
                     # 🛠️ 智能核心：比对已完成随访表，执行次数差额扣减
@@ -246,7 +247,7 @@ if uploaded_file is not None:
                     
                     # 检查扣减后是否还有需要补随访的数据
                     if result_df.empty:
-                        st.success(f"✨ 智能比对完成：{selected_month_display} 所有老患者的多规格随访任务已全部达成，没有漏访！")
+                        st.success(f"✨ 智能比对完成：{selected_month_display} 所有老患者的随访任务已全部达成，没有漏访！")
                     else:
                         st.divider()
                         # 根据是否比对历史，展现差异化的仪表盘标题
