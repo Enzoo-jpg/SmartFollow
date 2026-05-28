@@ -76,6 +76,41 @@ st.markdown("""
 
 st.divider()
 
+# =================【核心升级：标准模板下载区】=================
+st.markdown("### 📥 官方标准模板下载")
+with st.expander("👉 如果忘记表头或怕格式有误，请点此展开下载标准模板"):
+    # 1. 动态生成【销售底表】模板
+    df_base_tpl = pd.DataFrame(columns=['销售时间', '商品名', '药房', '门店编码', '患者id', '规格'])
+    df_base_tpl.loc[0] = ['2026-05-01', '特诺雅', '国药控股四川专业药房连锁有限公司金牛区一环路西三段药房', '9025007', 'HZ001', '100mg']
+    base_out = io.BytesIO()
+    with pd.ExcelWriter(base_out, engine='openpyxl') as writer:
+        df_base_tpl.to_excel(writer, index=False, sheet_name='销售底表')
+    base_tpl_bytes = base_out.getvalue()
+
+    # 2. 动态生成【已完成随访表】模板
+    df_hist_tpl = pd.DataFrame(columns=['患者oneId', '药品名称', '门店', '门店编码'])
+    df_hist_tpl.loc[0] = ['HZ001', '特诺雅-(古塞奇尤单抗注射液)', '国药控股四川专业药房连锁有限公司金牛区一环路西三段药房', '9025007']
+    hist_out = io.BytesIO()
+    with pd.ExcelWriter(hist_out, engine='openpyxl') as writer:
+        df_hist_tpl.to_excel(writer, index=False, sheet_name='已完成随访记录')
+    hist_tpl_bytes = hist_out.getvalue()
+
+    # 提供模板下载按钮
+    st.download_button(
+        label="📥 下载《1. 销售底表标准模板》",
+        data=base_tpl_bytes,
+        file_name="1_销售底表标准模板(必须包含“销售底表”工作表).xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    st.download_button(
+        label="📥 下载《2. 已完成随访记录表模板》",
+        data=hist_tpl_bytes,
+        file_name="2_已完成随访记录表模板.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+st.divider()
+
 # 1. 自动生成月份列表
 month_range = pd.date_range(start="2025-10-01", end="2028-12-01", freq="MS")
 month_options = [dt.strftime("%Y年%m月") for dt in month_range]
