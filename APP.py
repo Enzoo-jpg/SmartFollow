@@ -77,7 +77,6 @@ st.divider()
 # =================【标准模板下载区】=================
 st.markdown("### 📥 官方标准模板下载")
 with st.expander("👉 如果忘记表头或怕格式有误，请点此展开下载标准模板"):
-    # 更新基础底表模板的表头
     df_base_tpl = pd.DataFrame(columns=['销售时间', '商品名称', '门店名称', '门店code', '会员卡号', '规格'])
     df_base_tpl.loc[0] = ['2026-05-01', '特诺雅', '国药控股四川专业药房连锁有限公司金牛区一环路西三段药房', '9025007', 'HZ001', '100mg']
     base_out = io.BytesIO()
@@ -126,11 +125,11 @@ uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随�
 
 if uploaded_file is not None:
     try:
-        # 🔥【核心修改点】：通过 sheet_name=0 直接读取第一个工作表，不再校验或死磕 Sheet 名称
-        df = pd.read_excel(uploaded_file, sheet_name=0)
+        # 🔥【核心修改点1】：增加 dtype=str，全量以文本格式读取底表，防止16位会员卡号读入时就已经丢失精度
+        df = pd.read_excel(uploaded_file, sheet_name=0, dtype=str)
         df.columns = df.columns.str.strip()
         
-        # 🔥【核心修改点】：智能模糊匹配新旧表头列名
+        # 智能模糊匹配新旧表头列名
         time_col = next((col for col in df.columns if "时间" in col), None)
         name_col = next((col for col in df.columns if "商品" in col), None)
         pharmacy_col = next((col for col in df.columns if "门店名称" in col or "药房" in col), None)
@@ -153,6 +152,7 @@ if uploaded_file is not None:
                 # 门店编码（code）替换
                 df[code_col] = df[code_col].astype(str).str.strip().replace(CODE_MAPPING)
                 
+                # 转换时间列（虽然上面当文本读，这里重新转为标准时间对象）
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df = df.dropna(subset=[time_col]).sort_values(by=time_col, ascending=True)
                 
@@ -173,7 +173,6 @@ if uploaded_file is not None:
                 followup_patients = df_first[df_first['首次购买月份'] < target_month_str]
                 
                 if not followup_patients.empty:
-                    # 🔥【核心修改点】：输出表也统一采用全新的表头列名
                     result_df = pd.DataFrame({
                         '商品名称': followup_patients[name_col],
                         '门店名称': followup_patients[pharmacy_col],
@@ -185,7 +184,8 @@ if uploaded_file is not None:
                     # 比对已完成随访表
                     if uploaded_history is not None:
                         try:
-                            df_history = pd.read_excel(uploaded_history)
+                            # 🔥【核心修改点2】：已完成随访表也一并加 dtype=str，防止对比数据时卡号格式错位
+                            df_history = pd.read_excel(uploaded_history, dtype=str)
                             df_history.columns = df_history.columns.str.strip()
                             
                             req_hist_cols = ['患者oneId', '药品名称', '门店', '门店编码']
@@ -245,6 +245,16 @@ if uploaded_file is not None:
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         result_df.to_excel(writer, index=False, sheet_name='随访名单')
+                        
+                        # 🔥【核心修改点3】：利用 openpyxl 后台将导出的“会员卡号”列属性强制设为文本类型
+                        workbook = writer.book
+                        worksheet = writer.sheets['随访名单']
+                        if '会员卡号' in result_df.columns:
+                            col_idx = result_df.columns.get_loc('会员卡号') + 1  # openpyxl的列索引从1开始
+                            for row in range(2, worksheet.max_row + 1):       # 从第2行开始遍历，跳过表头
+                                cell = worksheet.cell(row=row, column=col_idx)
+                                cell.number_format = '@'                       # '@'是 Excel 内置的强文本格式标记
+                                
                     processed_data = output.getvalue()
                     
                     st.download_button(
