@@ -7,8 +7,7 @@ st.set_page_config(page_title="强生随访核验筛选系统", page_icon="📋"
 
 st.title("📋 强生随访核验筛选系统")
 
-# =================【🔥 已经替换为您真实的 12 个标准表头】=================
-# 严格按照您提供的顺序排列，系统会自动智能对齐字段，其余手工列自动留空
+# =================【🔥 您的 12 个真实标准表头】=================
 TARGET_EXCEL_HEADERS = [
     '随访任务ID', 
     '门店编码', 
@@ -23,6 +22,17 @@ TARGET_EXCEL_HEADERS = [
     '随访时间', 
     '随访日志'
 ]
+
+# =================【🔥 新增：商品名到化学名的自动映射配置区】=================
+CHEMICAL_MAPPING = {
+    "兆珂": "达雷妥尤单抗注射液",
+    "安森珂": "阿帕他胺片",
+    "兆珂速": "达雷妥尤单抗注射液(皮下注射)",
+    "特诺雅达": "古塞奇尤单抗注射液(静脉输注)",
+    "类克": "注射用英夫利西单抗",
+    "特诺雅": "古塞奇尤单抗注射液",
+    "亿珂": "伊布替尼胶囊"
+}
 
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
@@ -86,7 +96,7 @@ st.markdown("""
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表（不限名称）**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并智能直接扣减，精准提取出**“漏访待补名单”**。
 3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
-4. **自动套用模板表头**：系统导出的 Excel 会严格按照上方配置的表头进行排版，无法获取的后续手工列会自动填充为空白格。
+4. **自动套用模板与化学名**：系统导出的 Excel 会严格按照您的标准表头排版，且**“化学名”列已实现根据药品名称自动智能翻译填写**，其余手工列会自动填充为空白格。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -290,10 +300,10 @@ if uploaded_file is not None:
                         
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
-                    # 🔥【智能映射核心逻辑】：创建新结构表格，完美对齐用户给出的 12 个真实表头
+                    # 创建空的标准框架表
                     export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
                     
-                    # 开始字段交叉适配映射
+                    # 基础字段字典映射
                     MAPPING_DICTIONARY = {
                         '商品名': '商品名称',
                         '商品规格': '规格',
@@ -302,19 +312,22 @@ if uploaded_file is not None:
                         '会员卡号或患者ID': '会员卡号'
                     }
                     
+                    # 🔥【核心注入逻辑】：循环匹配并注入数据，实现“化学名”自动跟随翻译
                     for col_name in TARGET_EXCEL_HEADERS:
                         if col_name in MAPPING_DICTIONARY:
-                            # 如果在此映射字典中，提取对应计算出的列数据
                             source_col = MAPPING_DICTIONARY[col_name]
                             export_final_df[col_name] = display_df[source_col]
+                        elif col_name == '化学名':
+                            # 去除商品名前后的空格后，去映射字典找对应的化学名
+                            export_final_df['化学名'] = display_df['商品名称'].astype(str).str.strip().map(CHEMICAL_MAPPING).fillna("")
                         else:
-                            # 属于自定义填写列，直接填充空白格，方便人工记录
+                            # 属于自定义手工列（如：随访时间、随访日志等），直接填充空白格
                             export_final_df[col_name] = "" 
                     
-                    st.markdown("### 📄 标准随访表预览 (前100条 - 未对齐手工列已自动留空)")
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 化学名已自动翻译对齐)")
                     st.dataframe(export_final_df.head(100), use_container_width=True)
                     
-                    # 导出流：使用重构排版后的 export_final_df 进行规范化导出
+                    # 使用重构排版且翻译好化学名的 export_final_df 进行规范化导出
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         export_final_df.to_excel(writer, index=False, sheet_name='随访名单')
