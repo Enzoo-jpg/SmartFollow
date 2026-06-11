@@ -3,9 +3,9 @@ import pandas as pd
 import io
 
 # 设置网页标题和图标
-st.set_page_config(page_title="强生患者随访名单筛选系统", page_icon="📋", layout="centered")
+st.set_page_config(page_title="强生患者随访核验系统", page_icon="📋", layout="centered")
 
-st.title("📋 强生患者随访名单自动筛选系统")
+st.title("📋 强生患者随访核验系统")
 
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
