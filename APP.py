@@ -7,6 +7,23 @@ st.set_page_config(page_title="强生随访核验筛选系统", page_icon="📋"
 
 st.title("📋 强生随访核验筛选系统")
 
+# =================【🔥 已经替换为您真实的 12 个标准表头】=================
+# 严格按照您提供的顺序排列，系统会自动智能对齐字段，其余手工列自动留空
+TARGET_EXCEL_HEADERS = [
+    '随访任务ID', 
+    '门店编码', 
+    '门店名称', 
+    '会员卡号或患者ID', 
+    '商品ID', 
+    '编码', 
+    '商品名', 
+    '化学名', 
+    '商品规格', 
+    '剂型', 
+    '随访时间', 
+    '随访日志'
+]
+
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
     "DTC国药控股四川专业药房连锁有限公司金牛区一环路西三段药房": "国药控股四川专业药房连锁有限公司金牛区一环路西三段药房",
@@ -69,7 +86,7 @@ st.markdown("""
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表（不限名称）**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并智能直接扣减，精准提取出**“漏访待补名单”**。
 3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
-4. **自动更名映射**：系统已内置药房名称和门店编码转换功能，上传后会自动进行规范化统一。
+4. **自动套用模板表头**：系统导出的 Excel 会严格按照上方配置的表头进行排版，无法获取的后续手工列会自动填充为空白格。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -239,7 +256,7 @@ if uploaded_file is not None:
                     st.toast("🎉 随访名单计算完成！", icon="✅")
                     st.divider()
                     
-                    # 🔥【核心修改点1】：双栏并排的多维快速筛选器
+                    # 双栏并排的多维快速筛选器
                     st.markdown("### 🔍 随访数据多维快速筛选")
                     col1, col2 = st.columns(2)
                     
@@ -259,7 +276,7 @@ if uploaded_file is not None:
                             default=[]
                         )
                     
-                    # 🔥【核心修改点2】：执行多条件联合切片过滤
+                    # 执行多条件联合切片过滤
                     display_df = result_df.copy()
                     if selected_products:
                         display_df = display_df[display_df['商品名称'].isin(selected_products)]
@@ -273,33 +290,55 @@ if uploaded_file is not None:
                         
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
-                    st.markdown("### 📄 随访名单预览 (前100条)")
-                    st.dataframe(display_df.head(100), use_container_width=True)
+                    # 🔥【智能映射核心逻辑】：创建新结构表格，完美对齐用户给出的 12 个真实表头
+                    export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
                     
-                    # 导出流同步切换为过滤后的 display_df
+                    # 开始字段交叉适配映射
+                    MAPPING_DICTIONARY = {
+                        '商品名': '商品名称',
+                        '商品规格': '规格',
+                        '门店名称': '门店名称',
+                        '门店编码': '门店code',
+                        '会员卡号或患者ID': '会员卡号'
+                    }
+                    
+                    for col_name in TARGET_EXCEL_HEADERS:
+                        if col_name in MAPPING_DICTIONARY:
+                            # 如果在此映射字典中，提取对应计算出的列数据
+                            source_col = MAPPING_DICTIONARY[col_name]
+                            export_final_df[col_name] = display_df[source_col]
+                        else:
+                            # 属于自定义填写列，直接填充空白格，方便人工记录
+                            export_final_df[col_name] = "" 
+                    
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 未对齐手工列已自动留空)")
+                    st.dataframe(export_final_df.head(100), use_container_width=True)
+                    
+                    # 导出流：使用重构排版后的 export_final_df 进行规范化导出
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        display_df.to_excel(writer, index=False, sheet_name='随访名单')
+                        export_final_df.to_excel(writer, index=False, sheet_name='随访名单')
                         
                         workbook = writer.book
                         worksheet = writer.sheets['随访名单']
-                        if '会员卡号' in display_df.columns:
-                            col_idx = display_df.columns.get_loc('会员卡号') + 1
+                        
+                        # 锁定“会员卡号或患者ID”列防止长数字被 Excel 破坏科学计数法
+                        if '会员卡号或患者ID' in export_final_df.columns:
+                            col_idx = export_final_df.columns.get_loc('会员卡号或患者ID') + 1
                             for row in range(2, worksheet.max_row + 1):
                                 cell = worksheet.cell(row=row, column=col_idx)
                                 cell.number_format = '@'
                                 
                     processed_data = output.getvalue()
                     
-                    # 🔥【核心修改点3】：智能控制下载文件的后缀，避免因选择过多导致文件名过长
                     file_suffix = ""
                     if selected_products or selected_pharmacies:
                         file_suffix = "_部分筛选"
                         
                     st.download_button(
-                        label="📥 点击下载当前筛选的随访 Excel 表",
+                        label="📥 点击下载【标准格式】随访 Excel 表",
                         data=processed_data,
-                        file_name=f"{target_month_str}月份自动随访名单{file_suffix}.xlsx",
+                        file_name=f"{target_month_str}月份标准随访记录表{file_suffix}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
     except Exception as e:
