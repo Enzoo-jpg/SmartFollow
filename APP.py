@@ -3,9 +3,9 @@ import pandas as pd
 import io
 
 # 设置网页标题和图标
-st.set_page_config(page_title="强生患者随访核验系统", page_icon="📋", layout="centered")
+st.set_page_config(page_title="强生随访核验筛选系统", page_icon="📋", layout="centered")
 
-st.title("📋 强生患者随访核验系统")
+st.title("📋 强生随访核验筛选系统")
 
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
@@ -239,33 +239,44 @@ if uploaded_file is not None:
                     st.toast("🎉 随访名单计算完成！", icon="✅")
                     st.divider()
                     
-                    # 🔥【核心修改点1】：在前端页面增加品种动态多选过滤器
-                    st.markdown("### 🔍 随访品种快速筛选")
-                    # 从当前计算出来的结果里，抓取所有唯一的商品品种并排序
-                    unique_products = sorted(result_df['商品名称'].unique().tolist())
-                    selected_products = st.multiselect(
-                        "点击选择需要单独查看的品种（支持选择多个，不选默认展示全品种）：",
-                        options=unique_products,
-                        default=[]
-                    )
+                    # 🔥【核心修改点1】：双栏并排的多维快速筛选器
+                    st.markdown("### 🔍 随访数据多维快速筛选")
+                    col1, col2 = st.columns(2)
                     
-                    # 🔥【核心修改点2】：根据用户的筛选结果，切片生成用于页面展示和导出的 display_df
+                    with col1:
+                        unique_products = sorted(result_df['商品名称'].unique().tolist())
+                        selected_products = st.multiselect(
+                            "📦 筛选商品品种 (不选默认全选)：",
+                            options=unique_products,
+                            default=[]
+                        )
+                        
+                    with col2:
+                        unique_pharmacies = sorted(result_df['门店名称'].unique().tolist())
+                        selected_pharmacies = st.multiselect(
+                            "🏪 筛选药房门店 (不选默认全选)：",
+                            options=unique_pharmacies,
+                            default=[]
+                        )
+                    
+                    # 🔥【核心修改点2】：执行多条件联合切片过滤
+                    display_df = result_df.copy()
                     if selected_products:
-                        display_df = result_df[result_df['商品名称'].isin(selected_products)].copy()
-                    else:
-                        display_df = result_df.copy()
+                        display_df = display_df[display_df['商品名称'].isin(selected_products)]
+                    if selected_pharmacies:
+                        display_df = display_df[display_df['门店名称'].isin(selected_pharmacies)]
                     
                     # 动态展示当前筛选状态下的任务总数
                     metric_label = f"🚨 {selected_month_display} 需【补随访】差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
-                    if selected_products:
-                        metric_label += " (已筛选品种)"
+                    if selected_products or selected_pharmacies:
+                        metric_label += " (已应用筛选条件)"
                         
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
                     st.markdown("### 📄 随访名单预览 (前100条)")
                     st.dataframe(display_df.head(100), use_container_width=True)
                     
-                    # 🔥【核心修改点3】：导出流同步切换为 display_df，确保下载的 Excel 是用户筛选过后的结果
+                    # 导出流同步切换为过滤后的 display_df
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         display_df.to_excel(writer, index=False, sheet_name='随访名单')
@@ -280,8 +291,11 @@ if uploaded_file is not None:
                                 
                     processed_data = output.getvalue()
                     
-                    # 动态调整下载按钮的文件名后缀
-                    file_suffix = f"_{'_'.join(selected_products)}" if selected_products else ""
+                    # 🔥【核心修改点3】：智能控制下载文件的后缀，避免因选择过多导致文件名过长
+                    file_suffix = ""
+                    if selected_products or selected_pharmacies:
+                        file_suffix = "_部分筛选"
+                        
                     st.download_button(
                         label="📥 点击下载当前筛选的随访 Excel 表",
                         data=processed_data,
