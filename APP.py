@@ -125,7 +125,6 @@ uploaded_history = st.file_uploader("3. （可选）上传本月已完成的随�
 
 if uploaded_file is not None:
     try:
-        # 🔥【核心修改点1】：增加 dtype=str，全量以文本格式读取底表，防止16位会员卡号读入时就已经丢失精度
         df = pd.read_excel(uploaded_file, sheet_name=0, dtype=str)
         df.columns = df.columns.str.strip()
         
@@ -134,7 +133,12 @@ if uploaded_file is not None:
         name_col = next((col for col in df.columns if "商品" in col), None)
         pharmacy_col = next((col for col in df.columns if "门店名称" in col or "药房" in col), None)
         code_col = next((col for col in df.columns if "code" in col.lower() or "编码" in col), None) 
-        id_col = next((col for col in df.columns if "会员" in col or "卡号" in col or "id" in col.lower() or "患者" in col), None)
+        
+        # 🔥【核心修改点】：重新设计金字塔匹配顺序，精准避开“患者姓名”列
+        id_col = next((col for col in df.columns if "卡号" in col or "会员" in col or "id" in col.lower()), None)
+        if not id_col:
+            id_col = next((col for col in df.columns if "患者" in col and "姓名" not in col), None)
+            
         spec_col = next((col for col in df.columns if "规格" in col), None)
         
         if not all([time_col, name_col, pharmacy_col, code_col, id_col, spec_col]): 
@@ -152,7 +156,7 @@ if uploaded_file is not None:
                 # 门店编码（code）替换
                 df[code_col] = df[code_col].astype(str).str.strip().replace(CODE_MAPPING)
                 
-                # 转换时间列（虽然上面当文本读，这里重新转为标准时间对象）
+                # 转换时间列
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df = df.dropna(subset=[time_col]).sort_values(by=time_col, ascending=True)
                 
@@ -184,7 +188,6 @@ if uploaded_file is not None:
                     # 比对已完成随访表
                     if uploaded_history is not None:
                         try:
-                            # 🔥【核心修改点2】：已完成随访表也一并加 dtype=str，防止对比数据时卡号格式错位
                             df_history = pd.read_excel(uploaded_history, dtype=str)
                             df_history.columns = df_history.columns.str.strip()
                             
@@ -246,14 +249,13 @@ if uploaded_file is not None:
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         result_df.to_excel(writer, index=False, sheet_name='随访名单')
                         
-                        # 🔥【核心修改点3】：利用 openpyxl 后台将导出的“会员卡号”列属性强制设为文本类型
                         workbook = writer.book
                         worksheet = writer.sheets['随访名单']
                         if '会员卡号' in result_df.columns:
-                            col_idx = result_df.columns.get_loc('会员卡号') + 1  # openpyxl的列索引从1开始
-                            for row in range(2, worksheet.max_row + 1):       # 从第2行开始遍历，跳过表头
+                            col_idx = result_df.columns.get_loc('会员卡号') + 1
+                            for row in range(2, worksheet.max_row + 1):
                                 cell = worksheet.cell(row=row, column=col_idx)
-                                cell.number_format = '@'                       # '@'是 Excel 内置的强文本格式标记
+                                cell.number_format = '@'
                                 
                     processed_data = output.getvalue()
                     
