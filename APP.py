@@ -134,7 +134,7 @@ if uploaded_file is not None:
         pharmacy_col = next((col for col in df.columns if "门店名称" in col or "药房" in col), None)
         code_col = next((col for col in df.columns if "code" in col.lower() or "编码" in col), None) 
         
-        # 🔥【核心修改点】：重新设计金字塔匹配顺序，精准避开“患者姓名”列
+        # 金字塔匹配顺序，精准避开“患者姓名”列
         id_col = next((col for col in df.columns if "卡号" in col or "会员" in col or "id" in col.lower()), None)
         if not id_col:
             id_col = next((col for col in df.columns if "患者" in col and "姓名" not in col), None)
@@ -155,6 +155,9 @@ if uploaded_file is not None:
                 df[pharmacy_col] = df[pharmacy_col].astype(str).str.strip().replace(PHARMACY_MAPPING)
                 # 门店编码（code）替换
                 df[code_col] = df[code_col].astype(str).str.strip().replace(CODE_MAPPING)
+                
+                # 🔥【核心修改点1】：强力清洗底表会员卡号，彻底剔除数字最前面的逗号
+                df[id_col] = df[id_col].astype(str).str.strip().str.lstrip(',')
                 
                 # 转换时间列
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
@@ -198,7 +201,9 @@ if uploaded_file is not None:
                                 df_history['门店编码'] = df_history['门店编码'].astype(str).str.strip().replace(CODE_MAPPING)
                                 
                                 df_history['干净药品名'] = df_history['药品名称'].astype(str).str.split('-').str[0].str.strip()
-                                df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip()
+                                
+                                # 🔥【核心修改点2】：双重保险！对历史已完成随访表的患者oneId也做一次剥离逗号操作，防止比对错位
+                                df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip().str.lstrip(',')
                                 
                                 # 生成历史表的 4 维唯一 KEY
                                 df_history['4D_KEY'] = (
