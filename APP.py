@@ -22,15 +22,16 @@ TARGET_EXCEL_HEADERS = [
     '随访日志'
 ]
 
-# =================【🔥 核心：商品信息全量三维映射配置区】=================
+# =================【🔥 核心：商品信息全量四维映射配置区（新增剂型映射）】=================
+# 根据商品名，自动联动映射出「商品ID编码」、「化学名」与「剂型」
 PRODUCT_MASTER_MAP = {
-    "兆珂": {"id_code": "2110529", "chemical": "达雷妥尤单抗注射液"}, 
-    "安森珂": {"id_code": "11220278", "chemical": "阿帕他胺片"},
-    "兆珂速": {"id_code": "2120346", "chemical": "达雷妥尤单抗注射液(皮下注射)"},
-    "特诺雅达": {"id_code": "2110623", "chemical": "古塞奇尤单抗注射液(静脉输注)"},
-    "类克": {"id_code": "1111245-1", "chemical": "注射用英夫利西单抗"},
-    "特诺雅": {"id_code": "1119657-1", "chemical": "古塞奇尤单抗注射液"},
-    "亿珂": {"id_code": "2123326", "chemical": "伊布替尼胶囊"}
+    "兆珂": {"id_code": "2110529", "chemical": "达雷妥尤单抗注射液", "form": "针剂"}, 
+    "安森珂": {"id_code": "11220278", "chemical": "阿帕他胺片", "form": "片剂"},
+    "兆珂速": {"id_code": "2120346", "chemical": "达雷妥尤单抗注射液(皮下注射)", "form": "针剂"},
+    "特诺雅达": {"id_code": "2110623", "chemical": "古塞奇尤单抗注射液(静脉输注)", "form": "针剂"},
+    "类克": {"id_code": "1111245-1", "chemical": "注射用英夫利西单抗", "form": "针剂"},
+    "特诺雅": {"id_code": "1119657-1", "chemical": "古塞奇尤单抗注射液", "form": "针剂"},
+    "亿珂": {"id_code": "2123326", "chemical": "伊布替尼胶囊", "form": "片剂"}
 }
 
 # =================【这里是你的药房名字映射配置区】=================
@@ -95,7 +96,7 @@ st.markdown("""
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表（不限名称）**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并智能直接扣减，精准提取出**“漏访待补名单”**。
 3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
-4. **格式严格一致**：导出的 Excel 会**百分之百严格按照您的11位标准表头及顺序输出**。
+4. **四维联动填充**：导出的 Excel 会严格匹配您的标准格式。**“商品ID编码”、“化学名”以及新增的“剂型”均已实现智能跟随填充**。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -299,10 +300,10 @@ if uploaded_file is not None:
                         
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
-                    # 创建空的标准框架表格（严格遵循 TARGET_EXCEL_HEADERS）
+                    # 创建空的标准框架表格（严格遵循用户要求的 TARGET_EXCEL_HEADERS）
                     export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
                     
-                    # 字段对齐映射字典
+                    # 基础字段对齐映射字典
                     MAPPING_DICTIONARY = {
                         '门店编码': '门店code',
                         '门店名称': '门店名称',
@@ -314,7 +315,7 @@ if uploaded_file is not None:
                     # 清洗并匹配
                     display_df['商品名称_clean'] = display_df['商品名称'].astype(str).str.strip()
                     
-                    # 🔥【严格依序注入逻辑】
+                    # 🔥【严格依序注入逻辑 - 包含新增的剂型全自动填充】
                     for col_name in TARGET_EXCEL_HEADERS:
                         if col_name in MAPPING_DICTIONARY:
                             source_col = MAPPING_DICTIONARY[col_name]
@@ -323,11 +324,13 @@ if uploaded_file is not None:
                             export_final_df['商品ID编码'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('id_code', ''))
                         elif col_name == '化学名':
                             export_final_df['化学名'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('chemical', ''))
+                        elif col_name == '剂型':
+                            export_final_df['剂型'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('form', ''))
                         else:
-                            # 随访任务ID、剂型、随访时间、随访日志等手工列直接填充空值
+                            # 随访任务ID、随访时间、随访日志等手工列直接填充空值
                             export_final_df[col_name] = "" 
                     
-                    st.markdown("### 📄 标准随访表预览 (前100条 - 已严格按照您指定的顺序排版)")
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 表头依序对齐，剂型已自动填充)")
                     st.dataframe(export_final_df.head(100), use_container_width=True)
                     
                     # 写入并规范化导出
@@ -338,7 +341,7 @@ if uploaded_file is not None:
                         workbook = writer.book
                         worksheet = writer.sheets['随访名单']
                         
-                        # 🔒 特殊文本保护：锁定关键数字列，防止长ID变形
+                        # 🔒 特殊文本保护：锁定关键数字列，防止长ID科学计数变形
                         text_format_cols = ['会员卡号或患者ID', '商品ID编码', '门店编码']
                         for target_col in text_format_cols:
                             if target_col in export_final_df.columns:
