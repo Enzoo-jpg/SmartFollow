@@ -156,7 +156,7 @@ if uploaded_file is not None:
                 # 门店编码（code）替换
                 df[code_col] = df[code_col].astype(str).str.strip().replace(CODE_MAPPING)
                 
-                # 🔥【核心修改点1】：强力清洗底表会员卡号，彻底剔除数字最前面的逗号
+                # 清洗底表会员卡号，彻底剔除数字最前面的逗号
                 df[id_col] = df[id_col].astype(str).str.strip().str.lstrip(',')
                 
                 # 转换时间列
@@ -196,13 +196,9 @@ if uploaded_file is not None:
                             
                             req_hist_cols = ['患者oneId', '药品名称', '门店', '门店编码']
                             if all(col in df_history.columns for col in req_hist_cols):
-                                # 让历史随访表也执行更名和编码映射，统一格式
                                 df_history['门店'] = df_history['门店'].astype(str).str.strip().replace(PHARMACY_MAPPING)
                                 df_history['门店编码'] = df_history['门店编码'].astype(str).str.strip().replace(CODE_MAPPING)
-                                
                                 df_history['干净药品名'] = df_history['药品名称'].astype(str).str.split('-').str[0].str.strip()
-                                
-                                # 🔥【核心修改点2】：双重保险！对历史已完成随访表的患者oneId也做一次剥离逗号操作，防止比对错位
                                 df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip().str.lstrip(',')
                                 
                                 # 生成历史表的 4 维唯一 KEY
@@ -243,31 +239,53 @@ if uploaded_file is not None:
                     st.toast("🎉 随访名单计算完成！", icon="✅")
                     st.divider()
                     
-                    metric_label = f"🚨 {selected_month_display} 需【补随访】老患者差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
-                    st.metric(label=metric_label, value=f"{len(result_df)} 条任务")
+                    # 🔥【核心修改点1】：在前端页面增加品种动态多选过滤器
+                    st.markdown("### 🔍 随访品种快速筛选")
+                    # 从当前计算出来的结果里，抓取所有唯一的商品品种并排序
+                    unique_products = sorted(result_df['商品名称'].unique().tolist())
+                    selected_products = st.multiselect(
+                        "点击选择需要单独查看的品种（支持选择多个，不选默认展示全品种）：",
+                        options=unique_products,
+                        default=[]
+                    )
+                    
+                    # 🔥【核心修改点2】：根据用户的筛选结果，切片生成用于页面展示和导出的 display_df
+                    if selected_products:
+                        display_df = result_df[result_df['商品名称'].isin(selected_products)].copy()
+                    else:
+                        display_df = result_df.copy()
+                    
+                    # 动态展示当前筛选状态下的任务总数
+                    metric_label = f"🚨 {selected_month_display} 需【补随访】差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
+                    if selected_products:
+                        metric_label += " (已筛选品种)"
+                        
+                    st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
                     st.markdown("### 📄 随访名单预览 (前100条)")
-                    st.dataframe(result_df.head(100), use_container_width=True)
+                    st.dataframe(display_df.head(100), use_container_width=True)
                     
-                    # 导出流
+                    # 🔥【核心修改点3】：导出流同步切换为 display_df，确保下载的 Excel 是用户筛选过后的结果
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        result_df.to_excel(writer, index=False, sheet_name='随访名单')
+                        display_df.to_excel(writer, index=False, sheet_name='随访名单')
                         
                         workbook = writer.book
                         worksheet = writer.sheets['随访名单']
-                        if '会员卡号' in result_df.columns:
-                            col_idx = result_df.columns.get_loc('会员卡号') + 1
+                        if '会员卡号' in display_df.columns:
+                            col_idx = display_df.columns.get_loc('会员卡号') + 1
                             for row in range(2, worksheet.max_row + 1):
                                 cell = worksheet.cell(row=row, column=col_idx)
                                 cell.number_format = '@'
                                 
                     processed_data = output.getvalue()
                     
+                    # 动态调整下载按钮的文件名后缀
+                    file_suffix = f"_{'_'.join(selected_products)}" if selected_products else ""
                     st.download_button(
-                        label="📥 点击下载完整随访 Excel 表",
+                        label="📥 点击下载当前筛选的随访 Excel 表",
                         data=processed_data,
-                        file_name=f"{target_month_str}月份自动随访名单.xlsx",
+                        file_name=f"{target_month_str}月份自动随访名单{file_suffix}.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
     except Exception as e:
