@@ -3,36 +3,24 @@ import pandas as pd
 import io
 
 # 设置网页标题和图标
-st.set_page_config(page_title="强生随访核验筛选系统", page_icon="📋", layout="centered")
+st.set_page_config(page_title="患者随访名单筛选系统", page_icon="📋", layout="centered")
 
-st.title("📋 强生随访核验筛选系统")
+st.title("📋 患者随访名单自动筛选系统")
 
-# =================【🔥 您的 12 个真实标准表头】=================
+# =================【🔥 这里配置你期望的最终Excel标准表头】=================
+# 数组里的顺序就是导出的 Excel 从左到右的列顺序。
+# 系统会自动填入能对上的字段，对不上的（如 随访结果、备注）会自动留空。
 TARGET_EXCEL_HEADERS = [
-    '随访任务ID', 
-    '门店编码', 
+    '商品名称', 
+    '规格', 
     '门店名称', 
-    '会员卡号或患者ID', 
-    '商品ID', 
-    '编码', 
-    '商品名', 
-    '化学名', 
-    '商品规格', 
-    '剂型', 
-    '随访时间', 
-    '随访日志'
+    '门店code', 
+    '会员卡号', 
+    '随访日期',    # 留空，供手工填写
+    '当前随访状态', # 留空，供手工填写
+    '通话情况',    # 留空，供手工填写
+    '患者反馈/备注' # 留空，供手工填写
 ]
-
-# =================【🔥 新增：商品名到化学名的自动映射配置区】=================
-CHEMICAL_MAPPING = {
-    "兆珂": "达雷妥尤单抗注射液",
-    "安森珂": "阿帕他胺片",
-    "兆珂速": "达雷妥尤单抗注射液(皮下注射)",
-    "特诺雅达": "古塞奇尤单抗注射液(静脉输注)",
-    "类克": "注射用英夫利西单抗",
-    "特诺雅": "古塞奇尤单抗注射液",
-    "亿珂": "伊布替尼胶囊"
-}
 
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
@@ -81,7 +69,7 @@ CODE_MAPPING = {
     "DM0690466": "9009001",  
     "DM1086439": "9025014",  
     "DM0680333": "9025007",  
-    "DM1121464": "006",  
+    "DM1121464": "001",  
     "DM0802780": "9027001",  
     "DM1074241": "9030001",  
     "DM0606859": "9025012",  
@@ -96,7 +84,7 @@ st.markdown("""
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表（不限名称）**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并智能直接扣减，精准提取出**“漏访待补名单”**。
 3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
-4. **自动套用模板与化学名**：系统导出的 Excel 会严格按照您的标准表头排版，且**“化学名”列已实现根据药品名称自动智能翻译填写**，其余手工列会自动填充为空白格。
+4. **自动套用标表**：导出的 Excel 会自动适配您要求的标准格式，未填写的随访结果列会自动留空。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -300,44 +288,26 @@ if uploaded_file is not None:
                         
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
-                    # 创建空的标准框架表
-                    export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
-                    
-                    # 基础字段字典映射
-                    MAPPING_DICTIONARY = {
-                        '商品名': '商品名称',
-                        '商品规格': '规格',
-                        '门店名称': '门店名称',
-                        '门店编码': '门店code',
-                        '会员卡号或患者ID': '会员卡号'
-                    }
-                    
-                    # 🔥【核心注入逻辑】：循环匹配并注入数据，实现“化学名”自动跟随翻译
-                    for col_name in TARGET_EXCEL_HEADERS:
-                        if col_name in MAPPING_DICTIONARY:
-                            source_col = MAPPING_DICTIONARY[col_name]
-                            export_final_df[col_name] = display_df[source_col]
-                        elif col_name == '化学名':
-                            # 去除商品名前后的空格后，去映射字典找对应的化学名
-                            export_final_df['化学名'] = display_df['商品名称'].astype(str).str.strip().map(CHEMICAL_MAPPING).fillna("")
+                    # 🔥【核心修改点1】：构建最终导出的标准格式 DataFrame
+                    final_export_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
+                    for header in TARGET_EXCEL_HEADERS:
+                        if header in display_df.columns:
+                            final_export_df[header] = display_df[header]
                         else:
-                            # 属于自定义手工列（如：随访时间、随访日志等），直接填充空白格
-                            export_final_df[col_name] = "" 
+                            final_export_df[header] = ""  # 无法自动获取的列（如交班备注），直接留空
                     
-                    st.markdown("### 📄 标准随访表预览 (前100条 - 化学名已自动翻译对齐)")
-                    st.dataframe(export_final_df.head(100), use_container_width=True)
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 未对齐字段已留空)")
+                    st.dataframe(final_export_df.head(100), use_container_width=True)
                     
-                    # 使用重构排版且翻译好化学名的 export_final_df 进行规范化导出
+                    # 导出流同步切换为最终格式表 final_export_df
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                        export_final_df.to_excel(writer, index=False, sheet_name='随访名单')
+                        final_export_df.to_excel(writer, index=False, sheet_name='随访登记表')
                         
                         workbook = writer.book
-                        worksheet = writer.sheets['随访名单']
-                        
-                        # 锁定“会员卡号或患者ID”列防止长数字被 Excel 破坏科学计数法
-                        if '会员卡号或患者ID' in export_final_df.columns:
-                            col_idx = export_final_df.columns.get_loc('会员卡号或患者ID') + 1
+                        worksheet = writer.sheets['随访登记表']
+                        if '会员卡号' in final_export_df.columns:
+                            col_idx = final_export_df.columns.get_loc('会员卡号') + 1
                             for row in range(2, worksheet.max_row + 1):
                                 cell = worksheet.cell(row=row, column=col_idx)
                                 cell.number_format = '@'
