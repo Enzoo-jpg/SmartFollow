@@ -22,17 +22,21 @@ TARGET_EXCEL_HEADERS = [
     '随访日志'
 ]
 
-# =================【🔥 核心：商品信息全量四维映射配置区（新增剂型映射）】=================
-# 根据商品名，自动联动映射出「商品ID编码」、「化学名」与「剂型」
-PRODUCT_MASTER_MAP = {
-    "兆珂": {"id_code": "2110529", "chemical": "达雷妥尤单抗注射液", "form": "针剂"}, 
-    "安森珂": {"id_code": "11220278", "chemical": "阿帕他胺片", "form": "片剂"},
-    "兆珂速": {"id_code": "2120346", "chemical": "达雷妥尤单抗注射液(皮下注射)", "form": "针剂"},
-    "特诺雅达": {"id_code": "2110623", "chemical": "古塞奇尤单抗注射液(静脉输注)", "form": "针剂"},
-    "类克": {"id_code": "1111245-1", "chemical": "注射用英夫利西单抗", "form": "针剂"},
-    "特诺雅": {"id_code": "1119657-1", "chemical": "古塞奇尤单抗注射液", "form": "针剂"},
-    "亿珂": {"id_code": "2123326", "chemical": "伊布替尼胶囊", "form": "片剂"}
-}
+# =================【🔥 核心：全量商品四维主数据库（支持多规格智能识别）】=================
+PRODUCT_MASTER_LIST = [
+    {"id_code": "2110529", "name": "兆珂", "chemical": "达雷妥尤单抗注射液", "spec": "400mg/20ml/瓶", "form": "针剂"},
+    {"id_code": "2120346", "name": "兆珂速", "chemical": "达雷妥尤单抗注射液", "spec": "1800mg(15ml)/1瓶/盒", "form": "针剂"},
+    {"id_code": "1119657-1", "name": "特诺雅", "chemical": "古塞奇尤单抗注射液", "spec": "100mg/1ml/支(预充笔式注射器)", "form": "针剂"},
+    {"id_code": "2110530", "name": "兆珂", "chemical": "达雷妥尤单抗注射液", "spec": "100mg/5ml/瓶/盒", "form": "针剂"},
+    {"id_code": "11220278", "name": "安森珂", "chemical": "阿帕他胺片", "spec": "60mg*120片/瓶/盒", "form": "片剂"},
+    {"id_code": "2123222S", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.2mg*60片/盒", "form": "片剂"},
+    {"id_code": "2123221S", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.8mg*60片/盒", "form": "片剂"},
+    {"id_code": "2110623", "name": "特诺雅达", "chemical": "古塞奇尤单抗注射液", "spec": "200mg/20mL/瓶x1瓶/盒", "form": "针剂"},
+    {"id_code": "2123224", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.6mg*60片/盒", "form": "片剂"},
+    {"id_code": "2123367", "name": "傲朴舒", "chemical": "马昔腾坦片", "spec": "10mg*30片/盒", "form": "片剂"},
+    {"id_code": "1111245-1", "name": "类克", "chemical": "注射用英夫利西单抗", "spec": "100mg/瓶/盒", "form": "针剂"},
+    {"id_code": "2123326", "name": "亿珂", "chemical": "伊布替尼胶囊", "spec": "140mg*90粒/盒", "form": "片剂"}
+]
 
 # =================【这里是你的药房名字映射配置区】=================
 PHARMACY_MAPPING = {
@@ -93,10 +97,9 @@ CODE_MAPPING = {
 
 st.markdown("""
 ### 💡 使用前须知：
-1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表（不限名称）**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
-2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列，并智能直接扣减，精准提取出**“漏访待补名单”**。
-3. **关于规格说明**：目前系统已升级，**规格不再作为判定新老患者的依据**（即同一患者在同门店买同药品，多规格不重复计算随访）。
-4. **四维联动填充**：导出的 Excel 会严格匹配您的标准格式。**“商品ID编码”、“化学名”以及新增的“剂型”均已实现智能跟随填充**。
+1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
+2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列进行差额补访比对。
+3. **多规格双重智能对齐**：对于“兆珂”、“优拓比”等同名多规格药品，系统已升级**规格剂量自动判别算法**，会自动精准录入各自对应的商品ID编码及剂型。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -118,18 +121,8 @@ with st.expander("👉 如果忘记表头或怕格式有误，请点此展开下
         df_hist_tpl.to_excel(writer, index=False, sheet_name='已完成随访记录')
     hist_tpl_bytes = hist_out.getvalue()
 
-    st.download_button(
-        label="📥 下载《1. 销售底表模板》",
-        data=base_tpl_bytes,
-        file_name="1_销售底表新标准模板.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
-    st.download_button(
-        label="📥 下载《2. 已完成随访模板》",
-        data=hist_tpl_bytes,
-        file_name="2_已完成随访记录表模板.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    )
+    st.download_button(label="📥 下载《1. 销售底表模板》", data=base_tpl_bytes, file_name="1_销售底表新标准模板.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    st.download_button(label="📥 下载《2. 已完成随访模板》", data=hist_tpl_bytes, file_name="2_已完成随访记录表模板.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.divider()
 
@@ -161,7 +154,6 @@ if uploaded_file is not None:
         pharmacy_col = next((col for col in df.columns if "门店名称" in col or "药房" in col), None)
         code_col = next((col for col in df.columns if "code" in col.lower() or "编码" in col), None) 
         
-        # 金字塔匹配顺序，精准避开“患者姓名”列
         id_col = next((col for col in df.columns if "卡号" in col or "会员" in col or "id" in col.lower()), None)
         if not id_col:
             id_col = next((col for col in df.columns if "患者" in col and "姓名" not in col), None)
@@ -171,25 +163,19 @@ if uploaded_file is not None:
         if not all([time_col, name_col, pharmacy_col, code_col, id_col, spec_col]): 
             st.error("❌ 错误：底表中缺少必要列！请确保包含：销售时间、商品名称、门店名称、门店code、会员卡号、规格。")
         else:
-            # 初始化核心控制变量
             result_df = pd.DataFrame()
             followup_patients = pd.DataFrame()
             has_history = False
             hist_warning_flag = False
             
             with st.spinner("📊 正在读取数据并进行智能随访计算..."):
-                # 自动做药房（门店）名字映射
+                # 基础映射与清洗
                 df[pharmacy_col] = df[pharmacy_col].astype(str).str.strip().replace(PHARMACY_MAPPING)
-                # 门店编码（code）替换
                 df[code_col] = df[code_col].astype(str).str.strip().replace(CODE_MAPPING)
-                
-                # 清洗会员卡号
                 df[id_col] = df[id_col].astype(str).str.strip().str.lstrip(',')
                 
-                # 转换时间列
                 df[time_col] = pd.to_datetime(df[time_col], errors='coerce')
                 df = df.dropna(subset=[time_col]).sort_values(by=time_col, ascending=True)
-                
                 df['购买月份'] = df[time_col].dt.strftime('%Y-%m')
                 
                 # 4字段拼接组合成患者唯一KEY
@@ -215,7 +201,6 @@ if uploaded_file is not None:
                         '规格': followup_patients[spec_col]      
                     })
                     
-                    # 比对已完成随访表
                     if uploaded_history is not None:
                         try:
                             df_history = pd.read_excel(uploaded_history, dtype=str)
@@ -228,7 +213,6 @@ if uploaded_file is not None:
                                 df_history['干净药品名'] = df_history['药品名称'].astype(str).str.split('-').str[0].str.strip()
                                 df_history['患者oneId'] = df_history['患者oneId'].astype(str).str.strip().str.lstrip(',')
                                 
-                                # 生成历史表的 4 维唯一 KEY
                                 df_history['4D_KEY'] = (
                                     df_history['干净药品名'] + "_" + 
                                     df_history['门店'] + "_" + 
@@ -236,7 +220,6 @@ if uploaded_file is not None:
                                     df_history['患者oneId']
                                 )
                                 
-                                # 根据当前全新表头列生成当前计算表的 4 维唯一 KEY
                                 result_df['4D_KEY'] = (
                                     result_df['商品名称'].astype(str).str.strip() + "_" + 
                                     result_df['门店名称'].astype(str).str.strip() + "_" + 
@@ -244,13 +227,12 @@ if uploaded_file is not None:
                                     result_df['会员卡号'].astype(str).str.strip()
                                 )
                                 
-                                # 彻底剔除已随访数据
                                 result_df = result_df[~result_df['4D_KEY'].isin(df_history['4D_KEY'])]
                                 result_df = result_df.drop(columns=['4D_KEY'])
                                 has_history = True
                             else:
                                 hist_warning_flag = True
-                        except Exception as hist_e:
+                        except Exception:
                             hist_warning_flag = True
 
             # ------------------ 计算结束，开始渲染结果 ------------------
@@ -266,44 +248,30 @@ if uploaded_file is not None:
                     st.toast("🎉 随访名单计算完成！", icon="✅")
                     st.divider()
                     
-                    # 多维快速筛选器
                     st.markdown("### 🔍 随访数据多维快速筛选")
                     col1, col2 = st.columns(2)
-                    
                     with col1:
                         unique_products = sorted(result_df['商品名称'].unique().tolist())
-                        selected_products = st.multiselect(
-                            "📦 筛选商品品种 (不选默认全选)：",
-                            options=unique_products,
-                            default=[]
-                        )
-                        
+                        selected_products = st.multiselect("📦 筛选商品品种 (不选默认全选)：", options=unique_products, default=[])
                     with col2:
                         unique_pharmacies = sorted(result_df['门店名称'].unique().tolist())
-                        selected_pharmacies = st.multiselect(
-                            "🏪 筛选药房门店 (不选默认全选)：",
-                            options=unique_pharmacies,
-                            default=[]
-                        )
+                        selected_pharmacies = st.multiselect("🏪 筛选药房门店 (不选默认全选)：", options=unique_pharmacies, default=[])
                     
-                    # 执行多条件联合切片过滤
                     display_df = result_df.copy()
                     if selected_products:
                         display_df = display_df[display_df['商品名称'].isin(selected_products)]
                     if selected_pharmacies:
                         display_df = display_df[display_df['门店名称'].isin(selected_pharmacies)]
                     
-                    # 动态展示当前筛选状态下的任务总数
                     metric_label = f"🚨 {selected_month_display} 需【补随访】差额" if has_history else f"🎉 {selected_month_display} 需随访老患者总数"
                     if selected_products or selected_pharmacies:
                         metric_label += " (已应用筛选条件)"
-                        
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
-                    # 创建空的标准框架表格（严格遵循用户要求的 TARGET_EXCEL_HEADERS）
+                    # 创建空的标准框架表格（严格遵循 TARGET_EXCEL_HEADERS 顺序）
                     export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
                     
-                    # 基础字段对齐映射字典
+                    # 基础对齐映射
                     MAPPING_DICTIONARY = {
                         '门店编码': '门店code',
                         '门店名称': '门店名称',
@@ -312,36 +280,69 @@ if uploaded_file is not None:
                         '商品规格': '规格'
                     }
                     
-                    # 清洗并匹配
-                    display_df['商品名称_clean'] = display_df['商品名称'].astype(str).str.strip()
+                    # 🔥【核心：双重对齐算法逻辑】
+                    id_codes, chemicals, forms = [], [], []
+                    for _, row in display_df.iterrows():
+                        p_name = str(row['商品名称']).strip()
+                        p_spec = str(row['规格']).strip().lower().replace(" ", "")
+                        
+                        # 第一步：按商品名称筛选
+                        matches = [item for item in PRODUCT_MASTER_LIST if item['name'] == p_name]
+                        
+                        if not matches:
+                            id_codes.append(""); chemicals.append(""); forms.append("")
+                        elif len(matches) == 1:
+                            id_codes.append(matches[0]['id_code'])
+                            chemicals.append(matches[0]['chemical'])
+                            forms.append(matches[0]['form'])
+                        else:
+                            # 第二步：多规格情况，通过比对剂量强度关键字符来判定（如 400mg、0.2mg 等）
+                            matched_item = None
+                            for m in matches:
+                                m_spec = m['spec'].lower().replace(" ", "")
+                                if m_spec in p_spec or p_spec in m_spec:
+                                    matched_item = m
+                                    break
+                            
+                            # 模糊核心部分匹配（截取斜杠或星号前的剂量字符串进行包含校验）
+                            if not matched_item:
+                                for m in matches:
+                                    m_strength = m['spec'].split('/')[0].split('*')[0].lower().strip()
+                                    if m_strength in p_spec:
+                                        matched_item = m
+                                        break
+                                        
+                            if not matched_item:
+                                matched_item = matches[0]  # 若未匹配到，则默认取第一条
+                                
+                            id_codes.append(matched_item['id_code'])
+                            chemicals.append(matched_item['chemical'])
+                            forms.append(matched_item['form'])
                     
-                    # 🔥【严格依序注入逻辑 - 包含新增的剂型全自动填充】
+                    # 严格依序注入最终要输出的 DataFrame
                     for col_name in TARGET_EXCEL_HEADERS:
                         if col_name in MAPPING_DICTIONARY:
-                            source_col = MAPPING_DICTIONARY[col_name]
-                            export_final_df[col_name] = display_df[source_col]
+                            export_final_df[col_name] = display_df[MAPPING_DICTIONARY[col_name]]
                         elif col_name == '商品ID编码':
-                            export_final_df['商品ID编码'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('id_code', ''))
+                            export_final_df['商品ID编码'] = id_codes
                         elif col_name == '化学名':
-                            export_final_df['化学名'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('chemical', ''))
+                            export_final_df['化学名'] = chemicals
                         elif col_name == '剂型':
-                            export_final_df['剂型'] = display_df['商品名称_clean'].map(lambda x: PRODUCT_MASTER_MAP.get(x, {}).get('form', ''))
+                            export_final_df['剂型'] = forms
                         else:
-                            # 随访任务ID、随访时间、随访日志等手工列直接填充空值
                             export_final_df[col_name] = "" 
                     
-                    st.markdown("### 📄 标准随访表预览 (前100条 - 表头依序对齐，剂型已自动填充)")
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 已实现多规格多编码精准自动区分)")
                     st.dataframe(export_final_df.head(100), use_container_width=True)
                     
-                    # 写入并规范化导出
+                    # 导出处理
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='openpyxl') as writer:
                         export_final_df.to_excel(writer, index=False, sheet_name='随访名单')
-                        
                         workbook = writer.book
                         worksheet = writer.sheets['随访名单']
                         
-                        # 🔒 特殊文本保护：锁定关键数字列，防止长ID科学计数变形
+                        # 🔒 锁定数字长文本，防止Excel变形
                         text_format_cols = ['会员卡号或患者ID', '商品ID编码', '门店编码']
                         for target_col in text_format_cols:
                             if target_col in export_final_df.columns:
@@ -351,11 +352,8 @@ if uploaded_file is not None:
                                     cell.number_format = '@'
                                 
                     processed_data = output.getvalue()
+                    file_suffix = "_部分筛选" if selected_products or selected_pharmacies else ""
                     
-                    file_suffix = ""
-                    if selected_products or selected_pharmacies:
-                        file_suffix = "_部分筛选"
-                        
                     st.download_button(
                         label="📥 点击下载【规范格式】随访 Excel 表",
                         data=processed_data,
