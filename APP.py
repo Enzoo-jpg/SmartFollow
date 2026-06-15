@@ -22,16 +22,16 @@ TARGET_EXCEL_HEADERS = [
     '随访日志'
 ]
 
-# =================【🔥 核心：全量商品四维主数据库（支持多规格智能识别）】=================
+# =================【🔥 核心：全量商品四维主数据库（已同步最新化学名与规格）】=================
 PRODUCT_MASTER_LIST = [
     {"id_code": "2110529", "name": "兆珂", "chemical": "达雷妥尤单抗注射液", "spec": "400mg/20ml/瓶", "form": "针剂"},
-    {"id_code": "2120346", "name": "兆珂速", "chemical": "达雷妥尤单抗注射液", "spec": "1800mg(15ml)/1瓶/盒", "form": "针剂"},
+    {"id_code": "2120346", "name": "兆珂速", "chemical": "达雷妥尤单抗注射液(皮下注射)", "spec": "1800mg(15ml)/1瓶/盒", "form": "针剂"},
     {"id_code": "1119657-1", "name": "特诺雅", "chemical": "古塞奇尤单抗注射液", "spec": "100mg/1ml/支(预充笔式注射器)", "form": "针剂"},
     {"id_code": "2110530", "name": "兆珂", "chemical": "达雷妥尤单抗注射液", "spec": "100mg/5ml/瓶/盒", "form": "针剂"},
     {"id_code": "11220278", "name": "安森珂", "chemical": "阿帕他胺片", "spec": "60mg*120片/瓶/盒", "form": "片剂"},
     {"id_code": "2123222S", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.2mg*60片/盒", "form": "片剂"},
     {"id_code": "2123221S", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.8mg*60片/盒", "form": "片剂"},
-    {"id_code": "2110623", "name": "特诺雅达", "chemical": "古塞奇尤单抗注射液", "spec": "200mg/20mL/瓶x1瓶/盒", "form": "针剂"},
+    {"id_code": "2110623", "name": "特诺雅达", "chemical": "古塞奇尤单抗注射液(静脉输注)", "spec": "200mg/20mL/瓶x1瓶/盒", "form": "针剂"},
     {"id_code": "2123224", "name": "优拓比", "chemical": "司来帕格片", "spec": "0.6mg*60片/盒", "form": "片剂"},
     {"id_code": "2123367", "name": "傲朴舒", "chemical": "马昔腾坦片", "spec": "10mg*30片/盒", "form": "片剂"},
     {"id_code": "1111245-1", "name": "类克", "chemical": "注射用英夫利西单抗", "spec": "100mg/瓶/盒", "form": "针剂"},
@@ -99,7 +99,7 @@ st.markdown("""
 ### 💡 使用前须知：
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列进行差额补访比对。
-3. **多规格双重智能对齐**：对于“兆珂”、“优拓比”等同名多规格药品，系统已升级**规格剂量自动判别算法**，会自动精准录入各自对应的商品ID编码及剂型。
+3. **保留原始规格现状**：应用户要求，导出的最终随访表中的 `商品规格` 将**忠实保留和还原您销售底表中的字眼不变**（底层已加入智能容错识别，如自动关联片剂/粒剂、中英文括号等，确保不影响编码及化学名的匹配精度）。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -271,7 +271,7 @@ if uploaded_file is not None:
                     # 创建空的标准框架表格（严格遵循 TARGET_EXCEL_HEADERS 顺序）
                     export_final_df = pd.DataFrame(columns=TARGET_EXCEL_HEADERS)
                     
-                    # 基础对齐映射
+                    # 基础对齐映射关系（这里恢复对商品规格的直接映射映射）
                     MAPPING_DICTIONARY = {
                         '门店编码': '门店code',
                         '门店名称': '门店名称',
@@ -280,11 +280,12 @@ if uploaded_file is not None:
                         '商品规格': '规格'
                     }
                     
-                    # 🔥【核心：双重对齐算法逻辑】
+                    # 🔥【核心：后台双重容错对齐算法逻辑 —— 仅识别，不改写规格文字】
                     id_codes, chemicals, forms = [], [], []
                     for _, row in display_df.iterrows():
                         p_name = str(row['商品名称']).strip()
-                        p_spec = str(row['规格']).strip().lower().replace(" ", "")
+                        # 后台匹配时自动规范化，兼容“粒/片”以及中英文括号差异
+                        p_spec = str(row['规格']).strip().lower().replace(" ", "").replace("粒", "片").replace("（", "(").replace("）", ")")
                         
                         # 第一步：按商品名称筛选
                         matches = [item for item in PRODUCT_MASTER_LIST if item['name'] == p_name]
@@ -296,24 +297,23 @@ if uploaded_file is not None:
                             chemicals.append(matches[0]['chemical'])
                             forms.append(matches[0]['form'])
                         else:
-                            # 第二步：多规格情况，通过比对剂量强度关键字符来判定（如 400mg、0.2mg 等）
+                            # 第二步：多规格情况，通过比对剂量强度关键字符来判定
                             matched_item = None
                             for m in matches:
-                                m_spec = m['spec'].lower().replace(" ", "")
+                                m_spec = m['spec'].lower().replace(" ", "").replace("粒", "片").replace("（", "(").replace("）", ")")
                                 if m_spec in p_spec or p_spec in m_spec:
                                     matched_item = m
                                     break
                             
-                            # 模糊核心部分匹配（截取斜杠或星号前的剂量字符串进行包含校验）
                             if not matched_item:
                                 for m in matches:
-                                    m_strength = m['spec'].split('/')[0].split('*')[0].lower().strip()
+                                    m_strength = m['spec'].split('/')[0].split('*')[0].lower().strip().replace("（", "(").replace("）", ")")
                                     if m_strength in p_spec:
                                         matched_item = m
                                         break
                                         
                             if not matched_item:
-                                matched_item = matches[0]  # 若未匹配到，则默认取第一条
+                                matched_item = matches[0]
                                 
                             id_codes.append(matched_item['id_code'])
                             chemicals.append(matched_item['chemical'])
@@ -332,7 +332,7 @@ if uploaded_file is not None:
                         else:
                             export_final_df[col_name] = "" 
                     
-                    st.markdown("### 📄 标准随访表预览 (前100条 - 已实现多规格多编码精准自动区分)")
+                    st.markdown("### 📄 标准随访表预览 (前100条 - 商品规格已还原为原始状态)")
                     st.dataframe(export_final_df.head(100), use_container_width=True)
                     
                     # 导出处理
