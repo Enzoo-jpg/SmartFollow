@@ -102,7 +102,7 @@ st.markdown("""
 1. **历史销售底表**：系统默认读取您上传的 Excel 文件的**第一个工作表**。表头必须包含：*销售时间、商品名称、门店名称、门店code、会员卡号、规格*。
 2. **已完成随访记录表（可选）**：上传后系统会自动抓取其中的 *患者oneId、药品名称、门店、门店编码* 列进行差额补访比对。
 3. **保留原始规格现状**：应用户要求，导出的最终随访表中的 `商品规格` 将**忠实保留和还原您销售底表中的字眼不变**（底层已加入智能容错识别，如自动关联片剂/粒剂、中英文括号等，确保不影响编码及化学名的匹配精度）。
-4. **随访时间自动生成**：勾选的随访月份即作为随访时间所在月份，系统会为该月每一条随访任务自动编一个落在该月内的时间（格式：`YYYY-MM-DD HH:MM:SS`），无需手动填写。
+4. **随访时间自动生成**：勾选的随访月份即作为随访时间所在月份，系统会为该月每一条随访任务自动编一个落在该月内、且处于工作时段（09:00–21:00）的时间（格式：`YYYY-MM-DD HH:MM:SS`），无需手动填写。
 """, unsafe_allow_html=True)
 
 st.divider()
@@ -272,20 +272,20 @@ if uploaded_file is not None:
                     st.metric(label=metric_label, value=f"{len(display_df)} 条任务")
                     
                     # =================【🔥 新增：根据所选随访月份，为每行自动生成一个落在该月内的随访时间】=================
-                    # 时间范围：所选月份的第 1 天 00:00:00 至 月末最后一天 23:59:59
+                    # 时间范围：所选月份内、且落在工作时段 09:00:00 ~ 20:59:59（不含 21:00 整点）
                     _fy, _fm = int(target_month_str[:4]), int(target_month_str[5:7])
                     _month_start = datetime(_fy, _fm, 1)
                     if _fm == 12:
                         _month_end = datetime(_fy + 1, 1, 1)
                     else:
                         _month_end = datetime(_fy, _fm + 1, 1)
-                    _start_ts = _month_start.timestamp()
-                    _end_ts = (_month_end - timedelta(seconds=1)).timestamp()
-                    followup_times = [
-                        datetime.fromtimestamp(_start_ts + random.random() * (_end_ts - _start_ts))
-                        .strftime("%Y-%m-%d %H:%M:%S")
-                        for _ in range(len(display_df))
-                    ]
+                    _days_in_month = (_month_end - _month_start).days
+                    followup_times = []
+                    for _ in range(len(display_df)):
+                        _day_offset = random.randrange(_days_in_month)                       # 当月随机一天
+                        _sec_offset = random.randrange(9 * 3600, 21 * 3600)                  # 工作时段 09:00:00 ~ 20:59:59
+                        _dt = _month_start + timedelta(days=_day_offset, seconds=_sec_offset)
+                        followup_times.append(_dt.strftime("%Y-%m-%d %H:%M:%S"))
                     # =============================================================
                     
                     # 创建空的标准框架表格（严格遵循 TARGET_EXCEL_HEADERS 顺序）
